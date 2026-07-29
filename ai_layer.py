@@ -17,7 +17,7 @@ def extract_field(text, field):
             return line.strip()[len(field):].strip()
     return "N/A"
 
-def get_mock_trade_plan(scored_data, inst_price=None, inst_name="MCX Silver", inst_unit="₹/kg"):
+def get_mock_trade_plan(scored_data, inst_price=None, inst_name="MCX Silver", inst_unit="Rs/kg"):
     """Fallback mock plan if API fails or key is missing."""
     data = scored_data["enriched_data"]
     score = scored_data["total_score"]
@@ -30,8 +30,8 @@ def get_mock_trade_plan(scored_data, inst_price=None, inst_name="MCX Silver", in
         price = mcx.get("current_price_inr", 0) if mcx else 0
         
     def fmt(p):
-        if inst_unit == "₹/kg":
-            return f"₹{p:,.0f}"
+        if inst_unit == "Rs/kg":
+            return f"Rs {p:,.0f}"
         else:
             return f"{p:,.2f} {inst_unit}"
             
@@ -79,8 +79,19 @@ def get_mock_trade_plan(scored_data, inst_price=None, inst_name="MCX Silver", in
 4. **Confidence level:** {confidence}
 """.strip()
 
-def generate_trade_plan(scored_data, inst_price=None, inst_name="MCX Silver", inst_unit="₹/kg"):
+def generate_trade_plan(scored_data, inst_price=None, inst_name="MCX Silver", inst_unit="Rs/kg"):
     """Connects to Gemini API to generate trade plan. Falls back to mock if API key missing."""
+    # Validation gate: do not generate plan with invalid price data
+    if inst_price is None or inst_price == 0:
+        return (
+            f"Trade plan for {inst_name} is blocked -- price data is invalid or unavailable. "
+            "No trade plan will be generated until valid price data is confirmed."
+        )
+    if isinstance(inst_price, float) and (math.isnan(inst_price) or math.isinf(inst_price) or inst_price <= 0):
+        return (
+            f"Trade plan for {inst_name} is blocked -- price data is invalid or unavailable. "
+            "No trade plan will be generated until valid price data is confirmed."
+        )
     if not GEMINI_API_KEY:
         return get_mock_trade_plan(scored_data, inst_price, inst_name, inst_unit)
     

@@ -12,12 +12,20 @@ def calculate_rsi(series, period=14):
     avg_gain = gain.rolling(window=period, min_periods=period).mean()
     avg_loss = loss.rolling(window=period, min_periods=period).mean()
 
-    # Calculate RS
-    rs = avg_gain / avg_loss
-    # Calculate RSI
+    # Handle edge cases: all gains (RSI=100) or all losses (RSI=0)
+    last_avg_gain = avg_gain.iloc[-1] if not avg_gain.empty else None
+    last_avg_loss = avg_loss.iloc[-1] if not avg_loss.empty else None
+
+    if last_avg_gain is None or last_avg_loss is None or pd.isna(last_avg_gain) or pd.isna(last_avg_loss):
+        return 50.0  # Insufficient data — return neutral default
+    if last_avg_loss == 0:
+        return 100.0 if last_avg_gain > 0 else 50.0  # All gains -> fully overbought
+    if last_avg_gain == 0:
+        return 0.0   # All losses -> fully oversold
+
+    rs = last_avg_gain / last_avg_loss
     rsi = 100 - (100 / (1 + rs))
-    
-    return rsi.iloc[-1] if not rsi.empty and not pd.isna(rsi.iloc[-1]) else 50.0
+    return rsi
 
 def calculate_sma(series, period):
     """Calculate Simple Moving Average."""

@@ -23,3 +23,6 @@ Thumbs.db
 
 # Scratch/debug files
 scratch/
+
+# OpenMemory - IDE/Assistant specific rules
+.cursor/rules/openmemory.mdc

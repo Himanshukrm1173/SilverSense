@@ -2,8 +2,12 @@
 Prediction Engine for SilverSense Live Prediction Module.
 Implements a ±5 scoring system with direction, % move, probability,
 signal strength, price levels, and contextual risk alerts.
+
+Note: Multi-horizon forecasting is delegated to horizon_engine.py
+which derives 24H, 1W, and 1M independently using separate feature weights.
 """
 import math
+from horizon_engine import get_multi_horizon_forecast
 
 
 def evaluate_xagusd_signal(xag_data):
@@ -168,7 +172,6 @@ def get_prediction(data, inst_price=None, inst_unit="₹/kg", inst_name="MCX Sil
         mcx_price = inst_price
     else:
         mcx_price = mcx.get("current_price_inr", 0) if mcx else 0
-        mcx_price = mcx.get("current_price_inr", 0) if mcx else 0
     move_pct_avg = (move_low + move_high) / 2 / 100
     expected_high = mcx_price * (1 + move_pct_avg)
     expected_low = mcx_price * (1 - move_pct_avg)
@@ -289,63 +292,67 @@ def get_prediction(data, inst_price=None, inst_unit="₹/kg", inst_name="MCX Sil
     }
 
 
-def get_multi_timeframe_forecast(prediction):
+
+def get_multi_timeframe_forecast(
+    prediction: dict,
+    data: dict = None,
+    macro_result: dict = None,
+    market_regime_result: dict = None,
+    inst_name: str = "MCX Silver",
+    inst_unit: str = "Rs/kg",
+) -> list:
     """
-    Generate price forecasts for 24h, 48h, 1 week, and 1 month
-    based on the ±5 score. Longer timeframes get wider expected moves.
+    Wrapper: delegates to horizon_engine.get_multi_horizon_forecast.
+    Returns a list of 3 fully independent horizon dicts (24H, 1W, 1M).
+    Each horizon is derived from its own set of indicators and weightings.
+    A bearish 24H NEVER automatically forces a bearish 1W or 1M.
     """
-    score = prediction["total_score"]
-    abs_score = abs(score)
-    mcx_price = prediction["mcx_price"]
-    direction = prediction["direction"]
+    inst_price = prediction.get("mcx_price", 0)
+    raw_data = data or {}
 
-    # Move multipliers per timeframe (low%, high%) based on abs_score
-    # Longer timeframes = wider ranges, higher uncertainty
-    timeframe_moves = {
-        "24 Hours": {0: (0.0, 0.2), 1: (0.3, 0.5), 2: (0.5, 1.0), 3: (1.0, 1.5), 4: (1.5, 2.5), 5: (2.0, 3.0)},
-        "48 Hours": {0: (0.0, 0.4), 1: (0.5, 1.0), 2: (1.0, 1.8), 3: (1.5, 2.5), 4: (2.5, 4.0), 5: (3.5, 5.0)},
-        "1 Week":   {0: (0.0, 0.8), 1: (0.8, 1.5), 2: (1.5, 3.0), 3: (2.5, 4.5), 4: (4.0, 6.5), 5: (5.5, 8.0)},
-        "1 Month":  {0: (0.0, 1.5), 1: (1.5, 3.0), 2: (3.0, 5.0), 3: (4.5, 7.5), 4: (6.5, 10.0), 5: (8.0, 12.0)},
-    }
+    horizons = get_multi_horizon_forecast(
+        data=raw_data,
+        inst_price=inst_price,
+        inst_name=inst_name,
+        inst_unit=inst_unit,
+        macro_result=macro_result,
+        market_regime_result=market_regime_result,
+    )
 
-    # Probability decreases for longer timeframes
-    timeframe_prob = {
-        "24 Hours": {0: 45, 1: 52, 2: 60, 3: 68, 4: 78, 5: 88},
-        "48 Hours": {0: 42, 1: 48, 2: 55, 3: 63, 4: 72, 5: 82},
-        "1 Week":   {0: 38, 1: 44, 2: 50, 3: 58, 4: 65, 5: 72},
-        "1 Month":  {0: 35, 1: 40, 2: 45, 3: 52, 4: 58, 5: 64},
-    }
-
-    forecasts = []
-    for tf_name in ["24 Hours", "48 Hours", "1 Week", "1 Month"]:
-        move_low, move_high = timeframe_moves[tf_name].get(abs_score, (0.0, 0.0))
-        prob = timeframe_prob[tf_name].get(abs_score, 40)
-
-        if score > 0:
-            target_low = mcx_price * (1 + move_low / 100)
-            target_high = mcx_price * (1 + move_high / 100)
-            tf_direction = "UP ↑"
-            tf_color = "green"
-        elif score < 0:
-            target_low = mcx_price * (1 - move_high / 100)
-            target_high = mcx_price * (1 - move_low / 100)
-            tf_direction = "DOWN ↓"
-            tf_color = "red"
+    # Adapt to legacy dict shape used by app.py for backward compat
+    adapted = []
+    for h in horizons:
+        bias = h["bias"]
+        if bias == "Bullish":
+            tf_direction = "UP"
+            tf_color = "#00cc44"
+        elif bias == "Bearish":
+            tf_direction = "DOWN"
+            tf_color = "#cc0000"
         else:
-            target_low = mcx_price * (1 - move_high / 100)
-            target_high = mcx_price * (1 + move_high / 100)
-            tf_direction = "SIDEWAYS →"
-            tf_color = "gray"
+            tf_direction = "SIDEWAYS"
+            tf_color = "#888888"
 
-        forecasts.append({
-            "timeframe": tf_name,
+        prob = h["prob_split"]
+        adapted.append({
+            "timeframe": h["horizon"],
             "direction": tf_direction,
             "color": tf_color,
-            "move_low": move_low,
-            "move_high": move_high,
-            "target_low": target_low,
-            "target_high": target_high,
-            "probability": prob,
+            "bias": bias,
+            "move_low": h["move_low_pct"],
+            "move_high": h["move_high_pct"],
+            "target_low": h["expected_low"],
+            "target_high": h["expected_high"],
+            "probability": prob["up"] if bias == "Bullish" else (prob["down"] if bias == "Bearish" else prob["sideways"]),
+            "prob_split": prob,
+            "confidence_score": h["confidence_score"],
+            "no_trade_flag": h["no_trade_flag"],
+            "no_trade_reason": h["no_trade_reason"],
+            "contributing_factors": h["contributing_factors"],
+            "invalidation_level": h["invalidation_level"],
+            "current_regime": h["current_regime"],
+            "macro_regime": h["macro_regime"],
+            "conflict_note": h.get("conflict_note", ""),
+            "macro_note": h.get("macro_note", ""),
         })
-
-    return forecasts
+    return adapted
