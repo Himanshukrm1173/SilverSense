@@ -124,16 +124,7 @@ pytest tests/ -v
 
 ---
 
-## Data Sources
 
-| Feed | Symbol | Source | Conversion |
-|------|--------|--------|-----------|
-| Silver Spot | `SI=F` | Yahoo Finance | USD/oz → INR/kg via live USD/INR |
-| Dollar Index | `DX-Y.NYB` | Yahoo Finance | Direct |
-| US 10Y Yield | `^TNX` | Yahoo Finance | Direct |
-| USD/INR | `USDINR=X` | Yahoo Finance | Direct |
-| Tata Silver | `TATSILV.NS` | Yahoo Finance (NSE) | Direct; falls back to SI=F derivation |
-| Silver Bees | `SILVERBEES.NS` | Yahoo Finance (NSE) | Direct |
 
 > **Data Delay:** Yahoo Finance data may be delayed 1–15 minutes. Prices shown are approximate.
 
