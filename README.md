@@ -1,4 +1,5 @@
 # SilverSense — Silver Price Predictor & Analyzer
+https://silversense-scfhdrhapp9bzqycecc359r.streamlit.app/
 
 A real-time Streamlit dashboard for silver market analysis, multi-horizon forecasting, and AI-powered trade signals — focused on the Indian MCX market.
 
